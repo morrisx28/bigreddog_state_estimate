@@ -120,7 +120,7 @@ class BigReddogStateEstimator:
     def __init__(self, foot_force_threshold=-30.0, enable_leg_yaw=False,
                  enable_slope=True, vel_filter_tau=(0.08, 0.15, 0.03),
                  vel_median_window=5, vel_scale=(1.23, 1.0, 1.0),
-                 update_rate_hz=200.0):
+                 update_rate_hz=100.0):
         nominal_dt = 1.0 / float(update_rate_hz)
         self.update_rate_hz = float(update_rate_hz)
         self.core = FusionEstimatorCore(dt=nominal_dt)

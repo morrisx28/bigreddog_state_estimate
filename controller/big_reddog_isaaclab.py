@@ -110,6 +110,8 @@ class Controller:
         self.rec_gt_world = []   # ground-truth base velocity, world frame
         self.rec_quat = []       # body quaternion [w,x,y,z] at each sample
         self.rec_contact = []    # FL FR RL RR contact probability
+        self.rec_ang_vel_raw = []  # raw IMU gyroscope [wx, wy, wz]
+        self.rec_ang_vel_est = []  # estimator output angular velocity [roll, pitch, yaw] rate
 
         # Record
         self.ang_vel_data_list = []
@@ -358,6 +360,11 @@ class Controller:
         self.rec_gt_world.append(self.gt_lin_vel_world.copy())
         self.rec_quat.append(self.quat.copy())
         self.rec_contact.append(self.foot_contact.copy())
+        # Raw IMU gyroscope vs estimator output angular velocity (body frame).
+        self.rec_ang_vel_raw.append(self.ang_vel.copy())
+        self.rec_ang_vel_est.append(np.array(
+            [result.odom.RollVel, result.odom.PitchVel, result.odom.YawVel],
+            dtype=np.float32))
 
     def get_current_state(self):
         return self.qpos, self.qvel, self.ang_vel, self.quat
@@ -426,6 +433,8 @@ class Controller:
         est_w_raw = np.array(self.rec_est_world_raw, dtype=np.float64)
         gt_w = np.array(self.rec_gt_world, dtype=np.float64)
         quat = np.array(self.rec_quat, dtype=np.float64)
+        wraw = np.array(self.rec_ang_vel_raw, dtype=np.float64)   # raw gyro
+        west = np.array(self.rec_ang_vel_est, dtype=np.float64)   # estimator out
 
         # ground truth rotated into the body frame for the right column
         gt_b = np.array([self._quat_rotate_inv(quat[i], gt_w[i])
@@ -444,10 +453,12 @@ class Controller:
                            "gt_vx_w", "gt_vy_w", "gt_vz_w",
                            "est_vx_b", "est_vy_b", "est_vz_b",
                            "gt_vx_b", "gt_vy_b", "gt_vz_b",
-                           "est_raw_vx_w", "est_raw_vy_w", "est_raw_vz_w"])
+                           "est_raw_vx_w", "est_raw_vy_w", "est_raw_vz_w",
+                           "raw_wx", "raw_wy", "raw_wz",
+                           "est_wx", "est_wy", "est_wz"])
             for i in range(len(t)):
                 wcsv.writerow([t[i], *est_w[i], *gt_w[i], *est_b[i], *gt_b[i],
-                               *est_w_raw[i]])
+                               *est_w_raw[i], *wraw[i], *west[i]])
 
         # --- error metrics (body frame, the usual RL observation) ---
         err_b = est_b - gt_b
@@ -487,6 +498,27 @@ class Controller:
         fig.savefig(png_path, dpi=120)
         print(f"[plot] saved {png_path}")
         print(f"[plot] saved {csv_path}")
+
+        # --- angular velocity: raw gyro vs estimator output ---
+        w_labels = ["wx (roll rate)", "wy (pitch rate)", "wz (yaw rate)"]
+        rmse_w_ang = np.sqrt(np.mean((west - wraw) ** 2, axis=0))
+        print(f"[plot] ang vel RMSE (est vs raw gyro) "
+              f"wx={rmse_w_ang[0]:.3f}  wy={rmse_w_ang[1]:.3f}  "
+              f"wz={rmse_w_ang[2]:.3f}  (rad/s)")
+        fig2, axes2 = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
+        for r in range(3):
+            axes2[r].plot(t, wraw[:, r], "k-", lw=1.2, label="raw gyro")
+            axes2[r].plot(t, west[:, r], "r-", lw=1.2, label="estimator output")
+            axes2[r].set_ylabel(f"{w_labels[r]} [rad/s]")
+            axes2[r].grid(True, alpha=0.3)
+        axes2[0].legend(loc="upper right")
+        axes2[2].set_xlabel("time [s]")
+        fig2.suptitle("Big Reddog angular velocity: raw gyro vs estimator output")
+        fig2.tight_layout()
+        ang_png_path = os.path.join(out_dir, f"ang_vel_{stamp}.png")
+        fig2.savefig(ang_png_path, dpi=120)
+        print(f"[plot] saved {ang_png_path}")
+
         try:
             plt.show()
         except Exception:
