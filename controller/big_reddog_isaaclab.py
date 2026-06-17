@@ -21,7 +21,6 @@ from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
 from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowState_
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowState_
-from unitree_sdk2py.idl.unitree_go.msg.dds_ import SportModeState_
 from unitree_sdk2py.utils.crc import CRC
 from unitree_sdk2py.utils.thread import RecurrentThread
 import struct
@@ -87,8 +86,13 @@ class Controller:
         # foot_force_threshold is torque-derived and must be tuned on the
         # real robot; start conservative and adjust while watching contacts.
         self.est_rate_hz = 200.0          # estimator update frequency
+        # vel_filter_tau is the per-axis body-frame low-pass (forward, lateral,
+        # vertical). The vertical (vz) axis gets a heavier low-pass than the
+        # library default (0.03 -> 0.12 s) to smooth the contact-transition
+        # jerk; raise it further for more smoothing (at the cost of lag).
         self.estimator = BigReddogStateEstimator(
             foot_force_threshold=-30.0, enable_leg_yaw=False, enable_slope=True,
+            vel_filter_tau=(0.08, 0.15, 0.12), vel_median_window=7,
             update_rate_hz=self.est_rate_hz)
         self._est_period = 1.0 / self.est_rate_hz  # throttle period (s)
         self._last_est_perf = None        # perf_counter of last estimator run
@@ -97,28 +101,19 @@ class Controller:
         self.lin_vel_world_raw = np.zeros(3)  # unfiltered estimate, world frame
         self.foot_contact = np.zeros(4)   # FL FR RL RR contact probability
 
-        # Ground truth from the MuJoCo bridge (rt/sportmodestate.velocity is the
-        # base framelinvel in WORLD frame). Updated by HighStateMessageHandler.
-        self.gt_lin_vel_world = np.zeros(3)
-        self.gt_received = False
-
-        # Record (estimate vs ground truth) for plotting after exit.
-        self.rec_t = []          # seconds
-        self.rec_est_world = []  # estimated base velocity, world frame (filtered)
-        self.rec_est_body = []   # estimated base velocity, body frame (filtered)
-        self.rec_est_world_raw = []  # unfiltered estimate, world frame
-        self.rec_gt_world = []   # ground-truth base velocity, world frame
-        self.rec_quat = []       # body quaternion [w,x,y,z] at each sample
-        self.rec_contact = []    # FL FR RL RR contact probability
-        self.rec_ang_vel_raw = []  # raw IMU gyroscope [wx, wy, wz]
-        self.rec_ang_vel_est = []  # estimator output angular velocity [roll, pitch, yaw] rate
-
-        # Record
-        self.ang_vel_data_list = []
-        self.gravity_b_list = []
-        self.joint_vel_list = []
-        self.joint_pos_list = []
-        self.lin_vel_list = []
+        # Record three sources for plotting after exit:
+        #   1) estimator output, 2) raw IMU from the robot, 3) user cmd_vel.
+        self.rec_t = []            # seconds
+        # estimator output
+        self.rec_est_world = []    # estimated base lin. velocity, world frame (filtered)
+        self.rec_est_body = []     # estimated base lin. velocity, body frame (filtered)
+        self.rec_est_ang_vel = []  # estimator output angular velocity [roll, pitch, yaw] rate
+        # raw IMU from the robot
+        self.rec_imu_gyro = []     # raw IMU gyroscope [wx, wy, wz]
+        self.rec_imu_accel = []    # raw IMU accelerometer [ax, ay, az]
+        self.rec_imu_quat = []     # raw IMU quaternion [w, x, y, z]
+        # user command
+        self.rec_cmd_vel = []      # teleop cmd_vel [vx, vy, yaw_rate]
 
         # RL related
         # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -148,20 +143,10 @@ class Controller:
         self.lowstate_subscriber = ChannelSubscriber("rt/lowstate", LowState_)
         self.lowstate_subscriber.Init(self.LowStateMessageHandler, 10)
 
-        # ground-truth base velocity from the MuJoCo bridge (rt/sportmodestate)
-        self.highstate_subscriber = ChannelSubscriber("rt/sportmodestate", SportModeState_)
-        self.highstate_subscriber.Init(self.HighStateMessageHandler, 10)
-
         # Init default pos #
         self.Start()
 
         print("Initial Sucess !!!")
-
-    def HighStateMessageHandler(self, msg: SportModeState_):
-        # SportModeState.velocity is the base framelinvel in world frame.
-        for i in range(3):
-            self.gt_lin_vel_world[i] = msg.velocity[i]
-        self.gt_received = True
 
     def get_root_local_rot_tan_norm(self, quaternion):
         qw = quaternion[0]
@@ -352,19 +337,21 @@ class Controller:
         self.lin_vel_world_raw = np.array(result.lin_vel_world_raw, dtype=np.float32)
         self.foot_contact = np.array(result.foot_contact, dtype=np.float32)
 
-        # Record estimate + ground truth (paired with the latest GT sample).
+        # Record the three sources: estimator output, raw IMU, user cmd_vel.
         self.rec_t.append(t_ms / 1000.0)
+        # 1) estimator output
         self.rec_est_world.append(self.lin_vel_world.copy())
         self.rec_est_body.append(self.lin_vel_body.copy())
-        self.rec_est_world_raw.append(self.lin_vel_world_raw.copy())
-        self.rec_gt_world.append(self.gt_lin_vel_world.copy())
-        self.rec_quat.append(self.quat.copy())
-        self.rec_contact.append(self.foot_contact.copy())
-        # Raw IMU gyroscope vs estimator output angular velocity (body frame).
-        self.rec_ang_vel_raw.append(self.ang_vel.copy())
-        self.rec_ang_vel_est.append(np.array(
+        self.rec_est_ang_vel.append(np.array(
             [result.odom.RollVel, result.odom.PitchVel, result.odom.YawVel],
             dtype=np.float32))
+        # 2) raw IMU from the robot
+        self.rec_imu_gyro.append(self.ang_vel.copy())
+        self.rec_imu_accel.append(self.accel.copy())
+        self.rec_imu_quat.append(self.quat.copy())
+        # 3) user command (vx, vy, yaw_rate)
+        self.rec_cmd_vel.append(
+            np.array(self.teleop.get_command(), dtype=np.float32))
 
     def get_current_state(self):
         return self.qpos, self.qvel, self.ang_vel, self.quat
@@ -396,27 +383,17 @@ class Controller:
         self.controller_rt = 0
         self.is_running = False
 
-    @staticmethod
-    def _quat_rotate_inv(q, v):
-        """Rotate world-frame vector v into body frame: v_body = R(q)^T v."""
-        w, x, y, z = q
-        # conjugate quaternion rotation
-        t = 2.0 * np.array([
-            (-y) * v[2] - (-z) * v[1],
-            (-z) * v[0] - (-x) * v[2],
-            (-x) * v[1] - (-y) * v[0],
-        ])
-        return v + w * t + np.array([
-            (-y) * t[2] - (-z) * t[1],
-            (-z) * t[0] - (-x) * t[2],
-            (-x) * t[1] - (-y) * t[0],
-        ])
-
     def plot_and_save(self, out_dir=None):
-        """Plot estimated vs ground-truth base linear velocity and save it.
+        """Plot and save the three recorded sources after the run.
 
-        Produces a 3x2 figure (vx/vy/vz, world | body frames) plus a CSV of
-        the raw records. Called automatically on shutdown.
+        Records (no ground truth):
+          1) estimator output  -- base linear velocity (world/body) and
+             angular velocity (roll/pitch/yaw rate),
+          2) raw IMU from the robot -- gyroscope, accelerometer, quaternion,
+          3) user cmd_vel -- teleop command (vx, vy, yaw_rate).
+
+        Saves one CSV plus three PNGs (linear velocity, angular velocity,
+        raw IMU). Called automatically on shutdown.
         """
         if len(self.rec_t) == 0:
             print("[plot] no recorded data, skipping.")
@@ -428,96 +405,97 @@ class Controller:
 
         t = np.array(self.rec_t, dtype=np.float64)
         t = t - t[0]
-        est_w = np.array(self.rec_est_world, dtype=np.float64)
-        est_b = np.array(self.rec_est_body, dtype=np.float64)
-        est_w_raw = np.array(self.rec_est_world_raw, dtype=np.float64)
-        gt_w = np.array(self.rec_gt_world, dtype=np.float64)
-        quat = np.array(self.rec_quat, dtype=np.float64)
-        wraw = np.array(self.rec_ang_vel_raw, dtype=np.float64)   # raw gyro
-        west = np.array(self.rec_ang_vel_est, dtype=np.float64)   # estimator out
-
-        # ground truth rotated into the body frame for the right column
-        gt_b = np.array([self._quat_rotate_inv(quat[i], gt_w[i])
-                         for i in range(len(t))], dtype=np.float64)
-
-        if not self.gt_received:
-            print("[plot] WARNING: no rt/sportmodestate received; "
-                  "ground truth is all zeros (is the MuJoCo sim running?).")
+        est_w = np.array(self.rec_est_world, dtype=np.float64)    # est lin vel, world
+        est_b = np.array(self.rec_est_body, dtype=np.float64)     # est lin vel, body
+        est_ang = np.array(self.rec_est_ang_vel, dtype=np.float64)  # est ang vel
+        gyro = np.array(self.rec_imu_gyro, dtype=np.float64)      # raw IMU gyro
+        accel = np.array(self.rec_imu_accel, dtype=np.float64)    # raw IMU accel
+        quat = np.array(self.rec_imu_quat, dtype=np.float64)      # raw IMU quat
+        cmd = np.array(self.rec_cmd_vel, dtype=np.float64)        # user cmd_vel
 
         # --- save CSV ---
-        csv_path = os.path.join(out_dir, f"lin_vel_{stamp}.csv")
+        csv_path = os.path.join(out_dir, f"state_log_{stamp}.csv")
         with open(csv_path, "w", newline="") as f:
             wcsv = csv.writer(f)
             wcsv.writerow(["t",
                            "est_vx_w", "est_vy_w", "est_vz_w",
-                           "gt_vx_w", "gt_vy_w", "gt_vz_w",
                            "est_vx_b", "est_vy_b", "est_vz_b",
-                           "gt_vx_b", "gt_vy_b", "gt_vz_b",
-                           "est_raw_vx_w", "est_raw_vy_w", "est_raw_vz_w",
-                           "raw_wx", "raw_wy", "raw_wz",
-                           "est_wx", "est_wy", "est_wz"])
+                           "est_wx", "est_wy", "est_wz",
+                           "imu_gyro_x", "imu_gyro_y", "imu_gyro_z",
+                           "imu_acc_x", "imu_acc_y", "imu_acc_z",
+                           "imu_qw", "imu_qx", "imu_qy", "imu_qz",
+                           "cmd_vx", "cmd_vy", "cmd_yaw_rate"])
             for i in range(len(t)):
-                wcsv.writerow([t[i], *est_w[i], *gt_w[i], *est_b[i], *gt_b[i],
-                               *est_w_raw[i], *wraw[i], *west[i]])
+                wcsv.writerow([t[i], *est_w[i], *est_b[i], *est_ang[i],
+                               *gyro[i], *accel[i], *quat[i], *cmd[i]])
+        print(f"[plot] saved {csv_path}")
 
-        # --- error metrics (body frame, the usual RL observation) ---
-        err_b = est_b - gt_b
-        rmse_b = np.sqrt(np.mean(err_b ** 2, axis=0))
-        rmse_w = np.sqrt(np.mean((est_w - gt_w) ** 2, axis=0))
-        rmse_w_raw = np.sqrt(np.mean((est_w_raw - gt_w) ** 2, axis=0))
-        print(f"[plot] world RMSE raw      vx={rmse_w_raw[0]:.3f}  "
-              f"vy={rmse_w_raw[1]:.3f}  vz={rmse_w_raw[2]:.3f}  (m/s)")
-        print(f"[plot] world RMSE filtered vx={rmse_w[0]:.3f}  "
-              f"vy={rmse_w[1]:.3f}  vz={rmse_w[2]:.3f}  (m/s)")
-        print(f"[plot] body  RMSE filtered vx={rmse_b[0]:.3f}  "
-              f"vy={rmse_b[1]:.3f}  vz={rmse_b[2]:.3f}  (m/s)")
-
-        # --- figure ---
+        # --- figure 1: estimator linear velocity (body frame) vs user cmd ---
+        # cmd_vel is (vx, vy, yaw_rate); overlay cmd on the vx/vy axes only.
         labels = ["vx", "vy", "vz"]
         fig, axes = plt.subplots(3, 2, figsize=(13, 9), sharex=True)
         for r in range(3):
-            axes[r, 0].plot(t, est_w_raw[:, r], color="0.7", lw=0.7, label="estimate (raw)")
-            axes[r, 0].plot(t, gt_w[:, r], "k-", lw=1.5, label="ground truth")
-            axes[r, 0].plot(t, est_w[:, r], "r-", lw=1.2, label="estimate (filtered)")
+            axes[r, 0].plot(t, est_w[:, r], "r-", lw=1.2, label="estimator")
             axes[r, 0].set_ylabel(f"{labels[r]} [m/s]")
             axes[r, 0].grid(True, alpha=0.3)
 
-            axes[r, 1].plot(t, gt_b[:, r], "k-", lw=1.5, label="ground truth")
-            axes[r, 1].plot(t, est_b[:, r], "r--", lw=1.2, label="estimate")
+            axes[r, 1].plot(t, est_b[:, r], "r-", lw=1.2, label="estimator")
+            if r < 2:  # commanded vx / vy
+                axes[r, 1].plot(t, cmd[:, r], "b--", lw=1.2, label="cmd_vel")
             axes[r, 1].grid(True, alpha=0.3)
-        axes[0, 0].set_title("World frame")
-        axes[0, 1].set_title(f"Body frame (RMSE vx/vy/vz = "
-                             f"{rmse_b[0]:.3f}/{rmse_b[1]:.3f}/{rmse_b[2]:.3f})")
+        axes[0, 0].set_title("World frame (estimator)")
+        axes[0, 1].set_title("Body frame (estimator vs cmd_vel)")
         axes[0, 0].legend(loc="upper right")
+        axes[0, 1].legend(loc="upper right")
         axes[2, 0].set_xlabel("time [s]")
         axes[2, 1].set_xlabel("time [s]")
-        fig.suptitle("Big Reddog base linear velocity: estimate vs MuJoCo ground truth")
+        fig.suptitle("Big Reddog base linear velocity: estimator output vs user cmd_vel")
         fig.tight_layout()
-
         png_path = os.path.join(out_dir, f"lin_vel_{stamp}.png")
         fig.savefig(png_path, dpi=120)
         print(f"[plot] saved {png_path}")
-        print(f"[plot] saved {csv_path}")
 
-        # --- angular velocity: raw gyro vs estimator output ---
+        # --- figure 2: angular velocity -- raw IMU gyro vs estimator output ---
+        # overlay the user yaw-rate command on the wz (yaw) axis.
         w_labels = ["wx (roll rate)", "wy (pitch rate)", "wz (yaw rate)"]
-        rmse_w_ang = np.sqrt(np.mean((west - wraw) ** 2, axis=0))
-        print(f"[plot] ang vel RMSE (est vs raw gyro) "
-              f"wx={rmse_w_ang[0]:.3f}  wy={rmse_w_ang[1]:.3f}  "
-              f"wz={rmse_w_ang[2]:.3f}  (rad/s)")
         fig2, axes2 = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
         for r in range(3):
-            axes2[r].plot(t, wraw[:, r], "k-", lw=1.2, label="raw gyro")
-            axes2[r].plot(t, west[:, r], "r-", lw=1.2, label="estimator output")
+            axes2[r].plot(t, gyro[:, r], "k-", lw=1.2, label="raw IMU gyro")
+            axes2[r].plot(t, est_ang[:, r], "r-", lw=1.2, label="estimator output")
+            if r == 2:  # commanded yaw rate
+                axes2[r].plot(t, cmd[:, 2], "b--", lw=1.2, label="cmd yaw rate")
             axes2[r].set_ylabel(f"{w_labels[r]} [rad/s]")
             axes2[r].grid(True, alpha=0.3)
         axes2[0].legend(loc="upper right")
+        axes2[2].legend(loc="upper right")
         axes2[2].set_xlabel("time [s]")
-        fig2.suptitle("Big Reddog angular velocity: raw gyro vs estimator output")
+        fig2.suptitle("Big Reddog angular velocity: raw IMU gyro vs estimator output")
         fig2.tight_layout()
         ang_png_path = os.path.join(out_dir, f"ang_vel_{stamp}.png")
         fig2.savefig(ang_png_path, dpi=120)
         print(f"[plot] saved {ang_png_path}")
+
+        # --- figure 3: raw IMU -- gyroscope and accelerometer ---
+        g_labels = ["gyro x", "gyro y", "gyro z"]
+        a_labels = ["accel x", "accel y", "accel z"]
+        fig3, axes3 = plt.subplots(3, 2, figsize=(13, 9), sharex=True)
+        for r in range(3):
+            axes3[r, 0].plot(t, gyro[:, r], "g-", lw=1.0)
+            axes3[r, 0].set_ylabel(f"{g_labels[r]} [rad/s]")
+            axes3[r, 0].grid(True, alpha=0.3)
+
+            axes3[r, 1].plot(t, accel[:, r], "m-", lw=1.0)
+            axes3[r, 1].set_ylabel(f"{a_labels[r]} [m/s^2]")
+            axes3[r, 1].grid(True, alpha=0.3)
+        axes3[0, 0].set_title("Gyroscope")
+        axes3[0, 1].set_title("Accelerometer")
+        axes3[2, 0].set_xlabel("time [s]")
+        axes3[2, 1].set_xlabel("time [s]")
+        fig3.suptitle("Big Reddog raw IMU data from robot")
+        fig3.tight_layout()
+        imu_png_path = os.path.join(out_dir, f"imu_{stamp}.png")
+        fig3.savefig(imu_png_path, dpi=120)
+        print(f"[plot] saved {imu_png_path}")
 
         try:
             plt.show()
