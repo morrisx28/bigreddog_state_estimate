@@ -285,6 +285,68 @@ class SensorLegsPos(Sensors):
         c.ee = TFNode(2, -1, -1, -1, F, 0.0, -0.017500, -0.21)
         c.wheel_radius = 0.0
 
+    def UsePineappleV2(self):
+        """Pineapple V2 wheeled biped (2 legs), from its URDF.
+
+        Only TWO contact chains exist (``ContactChainNum = 2``): the left leg
+        uses joint slots 0-3 and the right leg slots 4-7 of the 16-slot joint
+        layout. Each chain is hip(X) -> thigh(Y) -> calf(Y) -> wheel, with the
+        end effector at the wheel centre; rolling contact is handled by the
+        per-chain wheel-odometry term (``wheel_radius * wheel_speed``, with the
+        shank pitch/roll compensation already in :meth:`FootFallPositionRecord`).
+
+        Offsets are the joint origins from
+        ``controller/robot/pineapple_v2/urdf/pineapple_v2.urdf``. The wheel
+        radius (0.077 m) is the wheel collision-cylinder radius. Joint slot
+        order matches the controller's xml order
+        ``[L_hip, L_thigh, L_calf, L_wheel, R_hip, R_thigh, R_calf, R_wheel]``.
+        ``FootEffortThreshold`` is torque-derived and MUST be tuned on hardware
+        (a wheeled biped keeps both wheels loaded almost continuously).
+        """
+        self._reset_chains()
+        self.ContactChainNum = 2
+        self.Environement_Height_Scope = 0.05
+        self.FootEffortThreshold = -15.0  # torque-based; tune on hardware
+
+        X, Y, FX = TF_AXIS_X, TF_AXIS_Y, TF_AXIS_FIXED
+        WHEEL_R = 0.077
+
+        # Left leg: q/dq/tau slots = 0-3 / 16-19 / 32-35
+        c = self.LegChains_[0]
+        c.node_num = 3
+        c.node[0] = TFNode(-1, 0, 16, 32, X, 0.086334, 0.050823, 0.056)
+        c.node[1] = TFNode(0, 1, 17, 33, Y, -0.066166, 0.063177, 0.0)
+        c.node[2] = TFNode(1, 2, 18, 34, Y, 0.0, 0.056000, -0.19)
+        c.ee = TFNode(2, -1, -1, -1, FX, 0.0, 0.035500, -0.19)
+        c.wheel_radius = WHEEL_R
+        c.wheel_q_index = 3
+        c.wheel_dq_index = 19
+        c.pitch_joint_num = 2
+        c.pitch_q_index[0] = 1
+        c.pitch_q_index[1] = 2
+        c.pitch_dq_index[0] = 17
+        c.pitch_dq_index[1] = 18
+        c.roll_joint_num = 1
+        c.roll_q_index[0] = 0
+
+        # Right leg: q/dq/tau slots = 4-7 / 20-23 / 36-39
+        c = self.LegChains_[1]
+        c.node_num = 3
+        c.node[0] = TFNode(-1, 4, 20, 36, X, 0.086334, -0.050823, 0.056)
+        c.node[1] = TFNode(0, 5, 21, 37, Y, -0.066166, -0.063177, 0.0)
+        c.node[2] = TFNode(1, 6, 22, 38, Y, 0.0, -0.056000, -0.19)
+        c.ee = TFNode(2, -1, -1, -1, FX, 0.0, -0.035500, -0.19)
+        c.wheel_radius = WHEEL_R
+        c.wheel_q_index = 7
+        c.wheel_dq_index = 23
+        c.pitch_joint_num = 2
+        c.pitch_q_index[0] = 5
+        c.pitch_q_index[1] = 6
+        c.pitch_dq_index[0] = 21
+        c.pitch_dq_index[1] = 22
+        c.roll_joint_num = 1
+        c.roll_q_index[0] = 4
+
     # ==================================================================
     def SensorDataHandle(self, message, time):
         if (not self.JointsXYZEnable) and (not self.JointsXYZVelocityEnable):
@@ -727,6 +789,12 @@ class SensorLegsPos(Sensors):
             v_sum[2] += vel[2] + WheelVel * move_dir_z
 
             leg_cnt += 1
+
+        # No contacting chain this step (e.g. all wheels momentarily airborne):
+        # leave the position/velocity observation at zero rather than dividing
+        # by zero. The H gate is set per the contact flags upstream.
+        if leg_cnt == 0:
+            return
 
         self.Observation[0] = p_sum[0] / leg_cnt
         self.Observation[3] = p_sum[1] / leg_cnt

@@ -3,22 +3,28 @@
      Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
      For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
 <robot
-  name="pineapple_v2">
+  name="pineappleV2">
+  <mujoco>
+    <compiler
+      meshdir="../meshes"
+      balanceinertia="true"
+      discardvisual="false" />
+  </mujoco>
   <link
     name="base_link">
     <inertial>
       <origin
-        xyz="-0.0018705 1.4002E-08 0.043903"
+        xyz="0.044769 0.00021 0.063886"
         rpy="0 0 0" />
       <mass
         value="1.673" />
       <inertia
-        ixx="0.00924389"
-        ixy="0"
-        ixz="-0.00155379"
-        iyy="0.01472633"
-        iyz="0"
-        izz="0.02192228" />
+        ixx="0.008145"
+        ixy="-0.0000276"
+        ixz="-0.00009621"
+        iyy="0.02025"
+        iyz="0.000004224"
+        izz="0.0226" />
     </inertial>
     <visual>
       <origin
@@ -26,7 +32,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/base_link.STL" />
+          filename="../meshes/base_link.STL" />
       </geometry>
       <material
         name="">
@@ -65,7 +71,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/battery.STL" />
+          filename="../meshes/battery.STL" />
       </geometry>
       <material
         name="">
@@ -109,7 +115,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/arm_base.STL" />
+          filename="../meshes/arm_base.STL" />
       </geometry>
       <material
         name="">
@@ -153,7 +159,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/hip_motor_L.STL" />
+          filename="../meshes/hip_motor_L.STL" />
       </geometry>
       <material
         name="">
@@ -197,7 +203,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/hip_motor_R.STL" />
+          filename="../meshes/hip_motor_R.STL" />
       </geometry>
       <material
         name="">
@@ -241,7 +247,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/L_hip.STL" />
+          filename="../meshes/L_hip.STL" />
       </geometry>
       <material
         name="">
@@ -290,7 +296,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/L_thigh.STL" />
+          filename="../meshes/L_thigh.STL" />
       </geometry>
       <material
         name="">
@@ -363,7 +369,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/knee_motor_L.STL" />
+          filename="../meshes/knee_motor_L.STL" />
       </geometry>
       <material
         name="">
@@ -407,7 +413,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/L_calf.STL" />
+          filename="../meshes/L_calf.STL" />
       </geometry>
       <material
         name="">
@@ -480,7 +486,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/wheel_motor_L.STL" />
+          filename="../meshes/wheel_motor_L.STL" />
       </geometry>
       <material
         name="">
@@ -506,17 +512,17 @@
     name="L_wheel">
     <inertial>
       <origin
-        xyz="-1.5282E-07 0.012142 -1.1774E-07"
+        xyz="0 0.008 0"
         rpy="0 0 0" />
       <mass
         value="0.405" />
       <inertia
-        ixx="0.00051"
+        ixx="0.00073779"
         ixy="0"
         ixz="0"
-        iyy="0.001"
+        iyy="0.00143168"
         iyz="0"
-        izz="0.00051" />
+        izz="0.00073779" />
     </inertial>
     <visual>
       <origin
@@ -524,7 +530,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/L_wheel.STL" />
+          filename="../meshes/L_wheel.STL" />
       </geometry>
       <material
         name="">
@@ -533,11 +539,17 @@
       </material>
     </visual>
     <collision>
-        <origin xyz="0 0.003 0" rpy="-1.5708 0 0"/>
+        <origin xyz="0 0.0025 0" rpy="-1.5708 0 0"/>
         <geometry>
-          <cylinder radius="0.077" length="0.023"/>
+          <cylinder radius="0.077" length="0.007"/>
         </geometry>
     </collision>
+    <!-- <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/L_wheel.STL" />
+      </geometry>
+    </collision> -->
   </link>
   <joint
     name="L_wheel_joint"
@@ -577,7 +589,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/R_hip.STL" />
+          filename="../meshes/R_hip.STL" />
       </geometry>
       <material
         name="">
@@ -626,7 +638,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/R_thigh.STL" />
+          filename="../meshes/R_thigh.STL" />
       </geometry>
       <material
         name="">
@@ -699,7 +711,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/knee_motor_R.STL" />
+          filename="../meshes/knee_motor_R.STL" />
       </geometry>
       <material
         name="">
@@ -743,7 +755,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/R_calf.STL" />
+          filename="../meshes/R_calf.STL" />
       </geometry>
       <material
         name="">
@@ -816,7 +828,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/wheel_motor_R.STL" />
+          filename="../meshes/wheel_motor_R.STL" />
       </geometry>
       <material
         name="">
@@ -842,17 +854,17 @@
     name="R_wheel">
     <inertial>
       <origin
-        xyz="-6.462E-08 -0.012142 -7.2937E-08"
+        xyz="0 -0.008 0"
         rpy="0 0 0" />
       <mass
         value="0.405" />
       <inertia
-        ixx="0.00051"
+        ixx="0.00073779"
         ixy="0"
         ixz="0"
-        iyy="0.001"
+        iyy="0.00143168"
         iyz="0"
-        izz="0.00051" />
+        izz="0.00073779" />
     </inertial>
     <visual>
       <origin
@@ -860,7 +872,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/R_wheel.STL" />
+          filename="../meshes/R_wheel.STL" />
       </geometry>
       <material
         name="">
@@ -869,11 +881,17 @@
       </material>
     </visual>
     <collision>
-        <origin xyz="0 -0.003 0" rpy="-1.5708 0 0"/>
+        <origin xyz="0 -0.0025 0" rpy="-1.5708 0 0"/>
         <geometry>
-          <cylinder radius="0.077" length="0.023"/>
+          <cylinder radius="0.077" length="0.007"/>
         </geometry>
     </collision>
+    <!-- <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="../meshes/R_wheel.STL" />
+      </geometry>
+    </collision> -->
   </link>
   <joint
     name="R_wheel_joint"
@@ -895,17 +913,17 @@
     name="camera">
     <inertial>
       <origin
-        xyz="0 0 0"
+        xyz="0.174 -0.001 0.036"
         rpy="0 0 0" />
       <mass
         value="0.3" />
       <inertia
-        ixx="0.00018695"
-        ixy="-0.00000169"
-        ixz="0.00000039"
-        iyy="0.00002755"
-        iyz="0.00000043"
-        izz="0.00018826" />
+        ixx="0.00018698"
+        ixy="-0.0000006251"
+        ixz="0.0000003048"
+        iyy="0.00002759"
+        iyz="0.0000005818"
+        izz="0.00018838" />
     </inertial>
     <visual>
       <origin
@@ -913,7 +931,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://pineapple_v2/meshes/camera.STL" />
+          filename="../meshes/camera.STL" />
       </geometry>
       <material
         name="">

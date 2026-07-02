@@ -24,6 +24,7 @@ from .fusion_estimator import (
     FusionEstimatorCore, CreateRobot_Estimation, ConfigIndex,
 )
 from .big_reddog import BigReddogStateEstimator, BigReddogVel
+from .pineapple_v2 import PineappleV2StateEstimator, PineappleV2Vel
 
 __all__ = [
     "FusionEstimatorCore",
@@ -36,6 +37,8 @@ __all__ = [
     "MOTOR_NUM",
     "BigReddogStateEstimator",
     "BigReddogVel",
+    "PineappleV2StateEstimator",
+    "PineappleV2Vel",
 ]
 
 __version__ = "1.0.0"

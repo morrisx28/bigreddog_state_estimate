@@ -1,0 +1,35 @@
+num_legs: 2
+meas_per_leg: 8
+state_dim: 25
+
+# Process Noise (Q): Model prediction uncertainty
+process_noise:
+  pos: [1.0e-5, 1.0e-5, 1.0e-5]
+  vel: [1.0e-3, 1.0e-3, 1.0e-3]  # IMU accel integration uncertainty
+  quat: [1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4] # Quaternion uncertainty
+  foot_pos: 1.0e-3 # Rolling contact point variation
+  acc_bias: 1.0e-4 # IMU accel bias random walk
+  gyro_bias: 1.0e-5 # IMU gyro bias random walk
+  wheel_vel: 1.0e-2 # Wheel speed uncertainty
+
+# Measurement Noise (R): Sensor uncertainty
+meas_noise:
+  pos: 1.0e-3 # FK position uncertainty
+  vel: 1.0e-2 # Wheel slip allowance
+  height: 1.0e-3 # Height constraint tolerance
+  wheel_vel: 1.0e-3 # Encoder velocity uncertainty
+  yaw: 1.0e-2 # Yaw measurement uncertainty
+  nhc: 5.0e-3 # Non-holonomic constraint: lateral body velocity = 0
+  
+# Initial Covariance (P0): Initial state uncertainty
+init_cov:
+  pos: 1.0e-4
+  vel: 1.0e-4
+  quat: 1.0e-4 # Initial attitude uncertainty
+  foot_pos: 1.0e-3
+  bias: 1.0e-2 # Initial bias uncertainty (high for convergence)
+  wheel_vel: 1.0e-3
+
+# Parameters
+contact_scaling: 1000.0 # Noise scaling when off-ground
+wheel_radius: 0.077 # Physical wheel radius (from URDF)
